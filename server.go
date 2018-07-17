@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,22 +20,20 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"crypto/md5"
-	"bytes"
 )
 
 const VERSION = "1.0"
 const AUTHOR = "Alexander Weigl <weigl@kit.edu>"
 
-const BOLD_SEPARATOR = "\n================================================================================\n";
+const BoldSeparator = "\n================================================================================\n"
 
-const NORMAL_SEPARATOR = "\n--------------------------------------------------------------------------------\n";
+const NormalSeparator = "\n--------------------------------------------------------------------------------\n"
 
-type Leaderboard []Record
+type ScoreBoard []Entry
 
 type LeaderboardService struct {
 	BoardFileName       string
-	CurrentBoard        Leaderboard
+	CurrentBoard        ScoreBoard
 	Script              string
 	Title               string
 	Description         string
@@ -45,49 +45,49 @@ type LeaderboardService struct {
 	ReevaluationAllowed bool
 }
 
-func (this *LeaderboardService) load() {
+func (s *LeaderboardService) load() {
 
-	dat, err := ioutil.ReadFile(this.BoardFileName)
+	dat, err := ioutil.ReadFile(s.BoardFileName)
 	if err == nil {
-		err := json.Unmarshal(dat, &this.CurrentBoard)
+		err := json.Unmarshal(dat, &s.CurrentBoard)
 		if err != nil {
 			log.Printf("Could not parse current board: %s, %s\n",
-				this.BoardFileName, err)
+				s.BoardFileName, err)
 		} else {
-			log.Printf("Board loaded: %s with %d enries.\n", this.BoardFileName, this.CurrentBoard.Len())
-			sort.Sort(this.CurrentBoard)
+			log.Printf("Board loaded: %s with %d enries.\n", s.BoardFileName, s.CurrentBoard.Len())
+			sort.Sort(s.CurrentBoard)
 		}
 	} else {
-		log.Printf("Could not read current board: %s\n", this.BoardFileName)
+		log.Printf("Could not read current board: %s\n", s.BoardFileName)
 		log.Println(err)
 	}
 
-	a, err := ioutil.ReadFile(this.TemplateFile)
+	a, err := ioutil.ReadFile(s.TemplateFile)
 	if err != nil {
-		log.Printf("Could not read template file %s. Create it.\n", this.TemplateFile)
-		ioutil.WriteFile(this.TemplateFile, []byte{}, os.ModePerm)
+		log.Printf("Could not read template file %s. Create it.\n", s.TemplateFile)
+		ioutil.WriteFile(s.TemplateFile, []byte{}, os.ModePerm)
 	} else {
-		this.template = string(a[:])
+		s.template = string(a[:])
 	}
 
-	err = os.MkdirAll(this.SubmissionFolder, os.ModePerm)
+	err = os.MkdirAll(s.SubmissionFolder, os.ModePerm)
 	if err != nil {
-		log.Printf("Could not create submission folder: %s", this.SubmissionFolder)
+		log.Printf("Could not create submission folder: %s", s.SubmissionFolder)
 	}
 }
 
-func (this *LeaderboardService) add(r Record) int {
-	this.CurrentBoard = append(this.CurrentBoard, r)
-	sort.Sort(this.CurrentBoard)
+func (s *LeaderboardService) add(r Entry) int {
+	s.CurrentBoard = append(s.CurrentBoard, r)
+	sort.Sort(s.CurrentBoard)
 
-	data, err := json.Marshal(this.CurrentBoard)
+	data, err := json.Marshal(s.CurrentBoard)
 	if err != nil {
 		log.Print(err)
 	} else {
-		ioutil.WriteFile(this.BoardFileName, data, os.ModePerm)
+		ioutil.WriteFile(s.BoardFileName, data, os.ModePerm)
 	}
 
-	for i, v := range this.CurrentBoard {
+	for i, v := range s.CurrentBoard {
 		if v.Id == r.Id {
 			return i + 1
 		}
@@ -95,8 +95,8 @@ func (this *LeaderboardService) add(r Record) int {
 	return 0
 }
 
-func (this *LeaderboardService) exists(h [16]byte) bool {
-	for _, e := range this.CurrentBoard {
+func (s *LeaderboardService) exists(h [16]byte) bool {
+	for _, e := range s.CurrentBoard {
 		if bytes.Equal(e.Hash[:], h[:]) {
 			return true
 		}
@@ -104,15 +104,14 @@ func (this *LeaderboardService) exists(h [16]byte) bool {
 	return false
 }
 
-func (this *LeaderboardService) submit(w http.ResponseWriter, r *http.Request) {
-	entry := Record{}
+func (s *LeaderboardService) submit(w http.ResponseWriter, r *http.Request) {
+	entry := Entry{}
 	entry.Id = strconv.FormatUint(rand.Uint64(), 16)
-	folder, err := ioutil.TempDir(this.SubmissionFolder, entry.Id)
+	folder, err := ioutil.TempDir(s.SubmissionFolder, entry.Id)
 
-	log, _ := os.Create(path.Join("/tmp", entry.Id+".log"))
-	defer log.Close()
-
-	sink := io.MultiWriter(w, log)
+	submissionLog, _ := os.Create(path.Join("/tmp", entry.Id+".submissionLog"))
+	defer submissionLog.Close()
+	sink := io.MultiWriter(w, submissionLog)
 
 	fmt.Fprintf(sink, "Your submission id is %s\n", entry.Id)
 
@@ -134,23 +133,23 @@ func (this *LeaderboardService) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if (this.exists(entry.Hash)) {
+	if s.exists(entry.Hash) {
 		fmt.Fprintf(sink, "*** A submission already exists with hash: %s.", entry.Hash)
-		if (!this.ReevaluationAllowed) {
-			fmt.Fprintf(sink, "*** Abort, re-evaluation is forbidden.", entry.Hash)
+		if !s.ReevaluationAllowed {
+			fmt.Fprintln(sink, "*** Abort, re-evaluation is forbidden.")
 			return
 		}
 	}
 
-	target := path.Clean(path.Join(folder, this.SubmissionFilename))
+	target := path.Clean(path.Join(folder, s.SubmissionFilename))
 	ioutil.WriteFile(target, content, os.ModePerm)
 
-	//fmt.Fprintf(sink, "Symlinking %s to %s\n", this.Script, path.Join(folder, this.Script))
-	//os.Symlink(this.Script, path.Join(folder, this.Script))
+	//fmt.Fprintf(sink, "Symlinking %s to %s\n", s.Script, path.Join(folder, s.Script))
+	//os.Symlink(s.Script, path.Join(folder, s.Script))
 
 	fmt.Fprintf(sink, "Environment is set up.\n")
 
-	script, _ := filepath.Abs(this.Script)
+	script, _ := filepath.Abs(s.Script)
 	cmd := exec.Command("sh", "-c", script)
 	//"/usr/bin/time", "-f", "'[%U,%S,%e]'", script)
 	cmd.Dir, _ = filepath.Abs(folder)
@@ -188,7 +187,7 @@ func (this *LeaderboardService) submit(w http.ResponseWriter, r *http.Request) {
 	entry.Runtime = cmd.ProcessState.UserTime().Seconds()
 	entry.Score = extractScore(output)
 
-	pos := this.add(entry)
+	pos := s.add(entry)
 	fmt.Fprintf(sink, "Your position is %d.\n", pos)
 }
 
@@ -205,42 +204,43 @@ func extractScore(bytes []byte) int {
 	}
 }
 
-func (this *LeaderboardService) show(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, this.template, this.Title, this.Description)
+func (s *LeaderboardService) show(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, s.template, s.Title, s.Description)
 	fmt.Fprintf(w, " #  %-20s %4s %6s %-30s", "NAME", "PTS", "TIME", "DATE")
-	fmt.Fprintf(w, NORMAL_SEPARATOR)
-	for i, e := range this.CurrentBoard {
+	fmt.Fprintf(w, NormalSeparator)
+	for i, e := range s.CurrentBoard {
 		fmt.Fprintf(w, "%03d %-20s %4d %6.3f %-30s\n",
 			i+1, e.Id, e.Score, e.Runtime, e.Date)
 		if i > 25 { // only showing top 25.
 			break
 		}
 	}
-	fmt.Fprintf(w, "\n"+NORMAL_SEPARATOR)
+	fmt.Fprintf(w, "\n"+NormalSeparator)
 	r.ParseForm()
 	yourIds := strings.Split(r.FormValue("ids"), ",")
 outer:
 	for _, yourId := range yourIds {
-		for rank, entry := range this.CurrentBoard {
-			if (strings.EqualFold(entry.Id, yourId)) {
-				fmt.Fprintf(w, "Your submission %s on rank %d!", yourId, rank);
+		for rank, entry := range s.CurrentBoard {
+			if strings.EqualFold(entry.Id, yourId) {
+				fmt.Fprintf(w, "Your submission %s on rank %d!", yourId, rank)
 				continue outer
 			}
 		}
-		fmt.Fprintf(w, "Submission %s not found!", yourId);
+		fmt.Fprintf(w, "Submission %s not found!", yourId)
 	}
 
-	fmt.Fprintln(w, BOLD_SEPARATOR);
-	fmt.Fprintf(w, "Server version: %s\tServer time: %s\n", VERSION,
-		time.Now().Format(time.RFC3339));
+	fmt.Fprint(w, BoldSeparator)
+	fmt.Fprintf(w, "Server version: %s\tServer time: %s\n"+
+		"https://github.com/wadoon/scoreboard\t%s", VERSION,
+		time.Now().Format(time.RFC3339), AUTHOR)
 }
 
-func (this *LeaderboardService) handler(w http.ResponseWriter, r *http.Request) {
+func (s *LeaderboardService) handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/plain")
 	if r.Method == "POST" {
-		this.submit(w, r)
+		s.submit(w, r)
 	} else {
-		this.show(w, r)
+		s.show(w, r)
 	}
 }
 
@@ -260,17 +260,17 @@ func main() {
 			log.Fatal(err)
 		}
 
-		for _, serv := range config {
-			serv.load()
+		for _, service := range config {
+			service.load()
 			log.Printf("Register %s at %s. Board goes to: %s\n",
-				serv.Title, serv.Endpoint, serv.BoardFileName)
-			http.HandleFunc(serv.Endpoint, serv.handler)
+				service.Title, service.Endpoint, service.BoardFileName)
+			http.HandleFunc(service.Endpoint, service.handler)
 		}
 		log.Fatal(http.ListenAndServe(":8080", nil))
 	}
 }
 
-type Record struct {
+type Entry struct {
 	Id      string
 	Name    string
 	Score   int
@@ -279,9 +279,9 @@ type Record struct {
 	Hash    [16]byte
 }
 
-func (a Leaderboard) Len() int      { return len(a) }
-func (a Leaderboard) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a Leaderboard) Less(i, j int) bool {
+func (a ScoreBoard) Len() int      { return len(a) }
+func (a ScoreBoard) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ScoreBoard) Less(i, j int) bool {
 	x := a[i]
 	y := a[j]
 
