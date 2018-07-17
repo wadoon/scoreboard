@@ -150,7 +150,7 @@ func (s *LeaderboardService) submit(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(sink, "Environment is set up.\n")
 
 	script, _ := filepath.Abs(s.Script)
-	cmd := exec.Command("sh", "-c", script)
+	cmd := exec.Command("sh", "-c", script, entry.Id)
 	//"/usr/bin/time", "-f", "'[%U,%S,%e]'", script)
 	cmd.Dir, _ = filepath.Abs(folder)
 
@@ -185,14 +185,14 @@ func (s *LeaderboardService) submit(w http.ResponseWriter, r *http.Request) {
 	entry.Name = r.FormValue("alias")
 	entry.Date = time.Now().Format(time.RFC3339)
 	entry.Runtime = cmd.ProcessState.UserTime().Seconds()
-	entry.Score = extractScore(output)
+	entry.Score = extractScore(entry.Id, output)
 
 	pos := s.add(entry)
 	fmt.Fprintf(sink, "Your position is %d.\n", pos)
 }
 
-func extractScore(bytes []byte) int {
-	re, err := regexp.Compile(`score[ ]*=[ ]*(\d+)`)
+func extractScore(salt string, bytes []byte) int {
+	re, err := regexp.Compile(salt + `score[ ]*=[ ]*(\d+)`)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -222,11 +222,11 @@ outer:
 	for _, yourId := range yourIds {
 		for rank, entry := range s.CurrentBoard {
 			if strings.EqualFold(entry.Id, yourId) {
-				fmt.Fprintf(w, "Your submission %s on rank %d!", yourId, rank)
+				fmt.Fprintf(w, "Your submission %s is on rank %d!\n", yourId, rank)
 				continue outer
 			}
 		}
-		fmt.Fprintf(w, "Submission %s not found!", yourId)
+		fmt.Fprintf(w, "Submission %s not found!\n", yourId)
 	}
 
 	fmt.Fprint(w, BoldSeparator)
