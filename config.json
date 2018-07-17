@@ -1,0 +1,22 @@
+[
+  {
+    "boardFileName": "ws18.board.txt",
+    "script": "helloworld.sh",
+    "title": "WS18",
+    "description": "bal blub",
+    "templateFile": "ws18.txt",
+    "endpoint": "/",
+    "submissionFilename": "main.cpp",
+    "submissionFolder": "."
+  },
+  {
+    "boardFileName": "test/board.txt",
+    "script": "test/run.sh",
+    "title": "Test Instance",
+    "description": "Testing purpose",
+    "templateFile": "test/template",
+    "endpoint": "/test",
+    "submissionFilename": "main.cpp",
+    "submissionFolder": "test/submission/"
+  }
+]
