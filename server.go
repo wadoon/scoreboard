@@ -18,28 +18,48 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"crypto/md5"
+	"bytes"
 )
+
+const VERSION = "1.0"
+const AUTHOR = "Alexander Weigl <weigl@kit.edu>"
+
+const BOLD_SEPARATOR = "\n================================================================================\n";
+
+const NORMAL_SEPARATOR = "\n--------------------------------------------------------------------------------\n";
 
 type Leaderboard []Record
 
 type LeaderboardService struct {
-	BoardFileName      string
-	CurrentBoard       Leaderboard
-	Script             string
-	Title              string
-	Description        string
-	TemplateFile       string
-	template           string
-	Endpoint           string
-	SubmissionFilename string
-	SubmissionFolder   string
+	BoardFileName       string
+	CurrentBoard        Leaderboard
+	Script              string
+	Title               string
+	Description         string
+	TemplateFile        string
+	template            string
+	Endpoint            string
+	SubmissionFilename  string
+	SubmissionFolder    string
+	ReevaluationAllowed bool
 }
 
 func (this *LeaderboardService) load() {
 
 	dat, err := ioutil.ReadFile(this.BoardFileName)
-	if err != nil {
-		json.Unmarshal(dat, &this.CurrentBoard)
+	if err == nil {
+		err := json.Unmarshal(dat, &this.CurrentBoard)
+		if err != nil {
+			log.Printf("Could not parse current board: %s, %s\n",
+				this.BoardFileName, err)
+		} else {
+			log.Printf("Board loaded: %s with %d enries.\n", this.BoardFileName, this.CurrentBoard.Len())
+			sort.Sort(this.CurrentBoard)
+		}
+	} else {
+		log.Printf("Could not read current board: %s\n", this.BoardFileName)
+		log.Println(err)
 	}
 
 	a, err := ioutil.ReadFile(this.TemplateFile)
@@ -68,11 +88,20 @@ func (this *LeaderboardService) add(r Record) int {
 	}
 
 	for i, v := range this.CurrentBoard {
-		if v == r {
+		if v.Id == r.Id {
 			return i + 1
 		}
 	}
 	return 0
+}
+
+func (this *LeaderboardService) exists(h [16]byte) bool {
+	for _, e := range this.CurrentBoard {
+		if bytes.Equal(e.Hash[:], h[:]) {
+			return true
+		}
+	}
+	return false
 }
 
 func (this *LeaderboardService) submit(w http.ResponseWriter, r *http.Request) {
@@ -99,9 +128,18 @@ func (this *LeaderboardService) submit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	content, err := ioutil.ReadAll(r.Body)
+	entry.Hash = md5.Sum(content)
 	if err != nil {
 		fmt.Fprintf(sink, "%s\n", err)
 		return
+	}
+
+	if (this.exists(entry.Hash)) {
+		fmt.Fprintf(sink, "*** A submission already exists with hash: %s.", entry.Hash)
+		if (!this.ReevaluationAllowed) {
+			fmt.Fprintf(sink, "*** Abort, re-evaluation is forbidden.", entry.Hash)
+			return
+		}
 	}
 
 	target := path.Clean(path.Join(folder, this.SubmissionFilename))
@@ -169,12 +207,32 @@ func extractScore(bytes []byte) int {
 
 func (this *LeaderboardService) show(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, this.template, this.Title, this.Description)
-	fmt.Fprintf(w, "    %30s %4s %6s %20s\n", "NAME", "PTS", "TIME", "DATE")
-	fmt.Fprintf(w, "-------------------------------------------------------------------------------\n")
+	fmt.Fprintf(w, " #  %-20s %4s %6s %-30s", "NAME", "PTS", "TIME", "DATE")
+	fmt.Fprintf(w, NORMAL_SEPARATOR)
 	for i, e := range this.CurrentBoard {
-		fmt.Fprintf(w, "%03d %30s %4d %6.3f %20s\n",
-			i, e.Name, e.Score, e.Runtime, e.Date)
+		fmt.Fprintf(w, "%03d %-20s %4d %6.3f %-30s\n",
+			i+1, e.Id, e.Score, e.Runtime, e.Date)
+		if i > 25 { // only showing top 25.
+			break
+		}
 	}
+	fmt.Fprintf(w, "\n"+NORMAL_SEPARATOR)
+	r.ParseForm()
+	yourIds := strings.Split(r.FormValue("ids"), ",")
+outer:
+	for _, yourId := range yourIds {
+		for rank, entry := range this.CurrentBoard {
+			if (strings.EqualFold(entry.Id, yourId)) {
+				fmt.Fprintf(w, "Your submission %s on rank %d!", yourId, rank);
+				continue outer
+			}
+		}
+		fmt.Fprintf(w, "Submission %s not found!", yourId);
+	}
+
+	fmt.Fprintln(w, BOLD_SEPARATOR);
+	fmt.Fprintf(w, "Server version: %s\tServer time: %s\n", VERSION,
+		time.Now().Format(time.RFC3339));
 }
 
 func (this *LeaderboardService) handler(w http.ResponseWriter, r *http.Request) {
@@ -218,6 +276,7 @@ type Record struct {
 	Score   int
 	Runtime float64
 	Date    string
+	Hash    [16]byte
 }
 
 func (a Leaderboard) Len() int      { return len(a) }
@@ -227,11 +286,12 @@ func (a Leaderboard) Less(i, j int) bool {
 	y := a[j]
 
 	keys := []int{
-		y.Score - x.Score,
-		int((x.Runtime - x.Runtime) * 10000),
-		strings.Compare(y.Date, x.Date)}
+		-(x.Score - y.Score), // reverse
+		int((x.Runtime - y.Runtime) * 10000),
+		strings.Compare(y.Date, x.Date),
+	}
 
-	for k := range keys {
+	for _, k := range keys {
 		if k != 0 {
 			return k < 0
 		}
