@@ -1,0 +1,11 @@
+name "leaderboard"
+description "A simple vibe.d server application."
+authors "Alexander Weigl"
+copyright "Copyright © 2018, Alexander Weigl"
+license "proprietary"
+dependency "vibe-d:http" version="~>0.8.2"
+dependency "vibe-d:tls" version="~>0.8.2"
+
+subConfiguration "vibe-d:tls" "openssl-1.1"
+
+versions "VibeDefaultMain"
