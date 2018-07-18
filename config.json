@@ -17,6 +17,7 @@
     "templateFile": "test/template",
     "endpoint": "/test",
     "submissionFilename": "main.cpp",
-    "submissionFolder": "test/submission/"
+    "submissionFolder": "test/submission/",
+    "ReevaluationAllowed": true
   }
 ]
