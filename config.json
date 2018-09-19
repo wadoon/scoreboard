@@ -1,13 +1,13 @@
 [
   {
-    "boardFileName": "ws18.board.txt",
-    "script": "helloworld.sh",
-    "title": "WS18",
-    "description": "bal blub",
-    "templateFile": "ws18.txt",
+    "boardFileName": "kuromasu/ws18.board.txt",
+    "script": "kuromasu/run.sh",
+    "title": "",
+    "description": "",
+    "templateFile": "kuromasu/template",
     "endpoint": "/",
-    "submissionFilename": "main.cpp",
-    "submissionFolder": "."
+    "submissionFilename": "KuromasuSolver.java",
+    "submissionFolder": "kuromasu/submission/"
   },
   {
     "boardFileName": "test/board.txt",

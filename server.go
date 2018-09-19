@@ -121,10 +121,10 @@ func New(data ServiceData, worker chan Submission, ace *ace.Ace) Service {
 	g.GET("/submission/:id", s.jobStatus)
 	g.POST("/submission", s.submit)
 
-	//
+	//start a worker for finished jobs
 	go func() {
 		for {
-			r := <-s.evalFinished
+			r := <- s.evalFinished
 			s.currentBoard = append(s.currentBoard, r)
 			data, err := json.Marshal(s.currentBoard)
 			if err != nil {
