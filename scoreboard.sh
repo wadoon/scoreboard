@@ -1,7 +1,7 @@
 #!/bin/sh
 
-FILENAME=large.cpp
-ENDPOINT=localhost:8080/test
+FILENAME=MyKuromasuSolver.java
+ENDPOINT=http://193.196.36.59:8080
 LAST_ID_FILE=.lastid
 
 show_help() {
@@ -20,7 +20,7 @@ case $1 in
     submit)
         echo "Submitting result..."
         nickname=$2
-        curl -X POST --data @$FILENAME $ENDPOINT/submission?nickname=$nickname 2>/dev/null | tee $LAST_ID_FILE
+        curl -X POST --upload-file $FILENAME $ENDPOINT/submission?nickname=$nickname 2>/dev/null | tee $LAST_ID_FILE
         lastid=$(grep "Your submission id is" $LAST_ID_FILE | cut -d' ' -f 6)
         echo $lastid >$LAST_ID_FILE
         ;;

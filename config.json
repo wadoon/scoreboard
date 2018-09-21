@@ -2,22 +2,11 @@
   {
     "boardFileName": "kuromasu/ws18.board.txt",
     "script": "kuromasu/run.sh",
-    "title": "",
+    "title": "Kuromasu1819",
     "description": "",
     "templateFile": "kuromasu/template",
     "endpoint": "/",
-    "submissionFilename": "KuromasuSolver.java",
+    "submissionFilename": "MyKuromasuSolver.java",
     "submissionFolder": "kuromasu/submission/"
-  },
-  {
-    "boardFileName": "test/board.txt",
-    "script": "test/run.sh",
-    "title": "Test Instance",
-    "description": "Testing purpose",
-    "templateFile": "test/template",
-    "endpoint": "/test",
-    "submissionFilename": "main.cpp",
-    "submissionFolder": "test/submission/",
-    "ReevaluationAllowed": true
   }
 ]

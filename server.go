@@ -1,27 +1,32 @@
 package main
 
 import (
+	"bytes"
+	"crypto/md5"
 	"encoding/json"
+	"fmt"
+	"github.com/plimble/ace"
 	"io/ioutil"
 	"log"
-	"github.com/plimble/ace"
+	"math/rand"
+	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
-	"strings"
-	"time"
 	"regexp"
 	"sort"
-	"os"
-	"bytes"
 	"strconv"
-	"math/rand"
-	"fmt"
-	"crypto/md5"
-	"path"
-	"os/exec"
+	"strings"
 	"syscall"
+	"time"
 )
 
+const VERSION = "1.0"
+const AUTHOR = "Alexander Weigl <weigl@kit.edu>"
+const BoldSeparator = "\n================================================================================\n"
+const NormalSeparator = "\n--------------------------------------------------------------------------------\n"
 const CONFIG = "config.json"
+const OutputLog = "out.log"
 
 func main() {
 	channel := make(chan Submission, 25)
@@ -41,7 +46,7 @@ func main() {
 
 		ace := ace.New()
 		for _, data := range config {
-			New(data, channel, ace)
+			New(&data, channel, ace)
 			log.Printf("Register %s at %s. Board goes to: %s\n",
 				data.Title, data.Endpoint, data.BoardFileName)
 		}
@@ -51,12 +56,7 @@ func main() {
 	}
 }
 
-/////
-const VERSION = "1.0"
-const AUTHOR = "Alexander Weigl <weigl@kit.edu>"
-const BoldSeparator = "\n================================================================================\n"
-const NormalSeparator = "\n--------------------------------------------------------------------------------\n"
-
+/////Datatypes
 type ScoreBoard []Entry
 
 type ServiceData struct {
@@ -73,14 +73,14 @@ type ServiceData struct {
 }
 
 type Service struct {
-	data              ServiceData
+	data              *ServiceData
 	currentBoard      ScoreBoard
 	currentUnfinished ScoreBoard
 	toWorker          chan Submission
 	evalFinished      chan Entry
 }
 
-func New(data ServiceData, worker chan Submission, ace *ace.Ace) Service {
+func New(data *ServiceData, worker chan Submission, ace *ace.Ace) Service {
 	finished := make(chan Entry)
 	s := Service{
 		data:         data,
@@ -108,6 +108,7 @@ func New(data ServiceData, worker chan Submission, ace *ace.Ace) Service {
 		log.Printf("Could not read template file %s. Create it.\n", data.TemplateFile)
 		ioutil.WriteFile(data.TemplateFile, []byte{}, os.ModePerm)
 	} else {
+		log.Printf("Template file '%s' readed.\n", data.TemplateFile)
 		data.template = string(a[:])
 	}
 
@@ -124,7 +125,7 @@ func New(data ServiceData, worker chan Submission, ace *ace.Ace) Service {
 	//start a worker for finished jobs
 	go func() {
 		for {
-			r := <- s.evalFinished
+			r := <-s.evalFinished
 			s.currentBoard = append(s.currentBoard, r)
 			data, err := json.Marshal(s.currentBoard)
 			if err != nil {
@@ -155,9 +156,12 @@ func (s *Service) submit(c *ace.C) {
 	r := c.Request
 
 	entry := Entry{
-		Id:    strconv.FormatUint(rand.Uint64(), 16),
-		Score: -1,
+		Id:       strconv.FormatUint(rand.Uint64(), 16),
+		NickName: r.URL.Query().Get("nickname"),
+		Score:    -1,
 	}
+
+	log.Printf("Incoming submission: nickname => %s", entry.NickName)
 
 	folder, err := ioutil.TempDir(s.data.SubmissionFolder, entry.Id)
 	//submissionLog, _ := os.Create(path.Join("/tmp", entry.Id+".submissionLog"))
@@ -223,12 +227,12 @@ func (s *Service) show(c *ace.C) {
 
 	sort.Sort(s.currentBoard)
 
-	fmt.Fprintf(w, s.data.template, s.data, s.data)
+	fmt.Fprintf(w, s.data.template)
 	fmt.Fprintf(w, "\n #  %-20s %4s %6s %-30s", "NAME", "PTS", "TIME", "DATE")
 	fmt.Fprintf(w, NormalSeparator)
 	for i, e := range s.currentBoard {
 		fmt.Fprintf(w, "%3d %-20s %4d %6.3f %-30s\n",
-			i+1, e.Id, e.Score, e.Runtime, e.Date)
+			i+1, e.NickName, e.Score, e.Runtime, e.Date)
 		if i >= 24 { // only showing top 25.
 			break
 		}
@@ -242,7 +246,7 @@ func (s *Service) show(c *ace.C) {
 		for _, yourId := range yourIds {
 			for rank, entry := range s.currentBoard {
 				if strings.EqualFold(entry.Id, yourId) {
-					fmt.Fprintf(w, "Your submission %s is on rank %d!\n", yourId, rank)
+					fmt.Fprintf(w, "Your submission %s is on rank %d!\n", yourId, 1+rank)
 					continue outer
 				}
 			}
@@ -254,9 +258,10 @@ func (s *Service) show(c *ace.C) {
 	}
 
 	fmt.Fprint(w, BoldSeparator)
-	fmt.Fprintf(w, "Server version: %s\t\tServer time: %s\n"+
-		"https://github.com/wadoon/scoreboard\t%s\n", VERSION,
-		time.Now().Format(time.RFC3339), AUTHOR)
+	fmt.Fprintf(w,
+		"Server version: %s                        Server time: %s\n"+
+			"https://github.com/wadoon/scoreboard              %s\n",
+		VERSION, time.Now().Format(time.RFC3339), AUTHOR)
 }
 
 func (service *Service) jobStatus(c *ace.C) {
@@ -264,21 +269,30 @@ func (service *Service) jobStatus(c *ace.C) {
 	id := c.Param("id")
 	pos := service.GetSubmission(id)
 	if pos < 0 {
-		fmt.Fprintln(w, "The submission not found.")
-		c.AbortWithStatus(404)
+		fmt.Fprintf(w, "The submission '%s' not found.\n", id)
+		c.Abort()
 	} else {
 		entry := service.currentBoard[pos]
-		if (entry.IsRun()) {
+		if entry.IsRun() {
 			fmt.Fprintln(w, "The submission was executed.")
 			fmt.Fprint(w, BoldSeparator)
 			fmt.Fprintln(w, entry.Output())
 			fmt.Fprint(w, BoldSeparator)
-			fmt.Fprintf(w, "Its rank is %d.\n", pos)
+			fmt.Fprintf(w, "Its rank is %d.\n", 1+pos)
+			if pos == 0 {
+				fmt.Fprintf(w, "!!! Congratulation, you are leading the scoreboard !!!")
+			}
+		} else if entry.isFailure() {
+			fmt.Fprintln(w, "The submission was executed with an error.\nPlease inspect the output carefully.")
+			fmt.Fprint(w, BoldSeparator)
+			fmt.Fprintln(w, entry.Output())
+			fmt.Fprint(w, BoldSeparator)
 		} else {
 			fmt.Fprintln(w, "The submission was not executed.")
-			fmt.Fprintln(w, "Position in queue: %d.\n", )
+			//fmt.Fprintln(w, "Position in queue: %d.", )
 		}
 	}
+	fmt.Fprintln(w, "")
 }
 func (service *Service) GetSubmission(id string) int {
 	sort.Sort(service.currentBoard)
@@ -308,7 +322,8 @@ func StartWorker(input chan Submission) {
 
 		log.Printf("Execute submission: %s. Output goes to %s\n", entry.Id, logFile)
 
-		cmd := exec.Command("sh", "-c", entry.Script, entry.Id)
+		cmd := exec.Command(entry.Script, entry.Id)
+		log.Printf("Run '%s %s'\n", entry.Script, entry.Id)
 		//"/usr/bin/time", "-f", "'[%U,%S,%e]'", script)
 		cmd.Dir, _ = filepath.Abs(entry.Folder)
 
@@ -318,10 +333,11 @@ func StartWorker(input chan Submission) {
 
 		out.Write(output)
 
-		if err != nil {
+		/*if err != nil {
+			log.Println(err)
 			fmt.Fprintln(out, err)
 			continue
-		}
+		}*/
 
 		exitStatus := cmd.ProcessState.Sys().(syscall.WaitStatus).ExitStatus()
 
@@ -331,16 +347,17 @@ func StartWorker(input chan Submission) {
 			cmd.ProcessState.SystemTime().Seconds(),
 			elapsed.Seconds())
 
+		entry.Date = time.Now().Format(time.RFC3339)
+		entry.Runtime = cmd.ProcessState.UserTime().Seconds()
+
 		if err != nil {
 			fmt.Fprintf(out, "Error occured during process. %s\n", err)
 			fmt.Fprintf(out, "*** Submission rejected ***\n")
-			return
+			entry.Score = -2
+		} else {
+			//entry.NickName = r.FormValue("alias")
+			entry.Score = extractScore(entry.Id, output)
 		}
-
-		//entry.Name = r.FormValue("alias")
-		entry.Date = time.Now().Format(time.RFC3339)
-		entry.Runtime = cmd.ProcessState.UserTime().Seconds()
-		entry.Score = extractScore(entry.Id, output)
 		submission.result <- entry
 		out.Close()
 	}
@@ -348,30 +365,29 @@ func StartWorker(input chan Submission) {
 
 //
 func extractScore(salt string, bytes []byte) int {
-	re, err := regexp.Compile(salt + `score[ ]*=[ ]*(\d+)`)
+	re, err := regexp.Compile(`score[ ]*` + salt + `=[ ]*(\d+)`)
 	if err != nil {
 		log.Fatal(err)
 	}
 	score := re.FindSubmatch(bytes)
 	if score != nil {
-		return int(score[0][1])
+		s, _ := strconv.Atoi(string(score[1][:]))
+		return s
 	} else {
 		return 0
 	}
 }
 
 type Entry struct {
-	Id      string
-	Name    string
-	Score   int
-	Runtime float64
-	Date    string
-	Hash    [16]byte
-	Folder  string
-	Script  string
+	Id       string
+	NickName string
+	Score    int
+	Runtime  float64
+	Date     string
+	Hash     [16]byte
+	Folder   string
+	Script   string
 }
-
-const OutputLog = "out.log"
 
 func (e *Entry) Output() string {
 	out, err := ioutil.ReadFile(filepath.Join(e.Folder, OutputLog));
@@ -380,9 +396,14 @@ func (e *Entry) Output() string {
 	}
 	return string(out[:])
 }
+
 func (e *Entry) IsRun() bool {
 	return e.Score >= 0
 }
+func (e *Entry) isFailure() bool {
+	return e.Score == -2
+}
+
 func (a ScoreBoard) Len() int      { return len(a) }
 func (a ScoreBoard) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 func (a ScoreBoard) Less(i, j int) bool {

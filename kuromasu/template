@@ -1,20 +1,23 @@
-                                    %s
-==============================================================================
+-------------------------------------------------------------------------------
+                            SAT Practise Excercise
+                               "Kuromasu Solver"
+                               Winter Term 18/19
+===============================================================================
 
 
-This is the leaderboard of the SAT puzzle in the winter term 2018/2019.
-See https://formal.iti.kit.edu/teaching/FormSys1819 for further information
-on the excercise.
+This is the leaderboard of the SAT puzzle in the winter term 2018/2019. See
+https://formal.iti.kit.edu/teaching/FormSys1819 for further information on the
+excercise.
 
 # News
 
-    * 2018-09-19, weigl -- Leaderboard startet
+    * 2018-10-01, weigl -- Leaderboard startet
 
 # How to submit a solution!
 
-    There is the `scoreboard.sh` as part of the kuromasu distribution,
-    which handles provides an easy to use interface. In short, this servers
-    provides following entrypoints:
+    There is the `scoreboard.sh` as part of the kuromasu distribution, which
+    provides an easy to use interface. In short, this service provides
+    following entrypoints:
 
     * POST /submission?nickname=<yournickname>
 
@@ -38,12 +41,4 @@ on the excercise.
 
 
 
-                               The leaderboard of: %s
-
-
-%s
-
-
-
-==============================================================================
-Leaderboard server is under GPL-v3.      https://github.com/wadoon/leaderboard
+                      T H E  L E A D E R B O A R D

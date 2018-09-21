@@ -1,0 +1,11 @@
+
+grant {
+      permission java.lang.RuntimePermission "getenv.*";
+      permission java.util.PropertyPermission "*", "read,write";
+
+      permission "java.io.FilePermission"
+        "/home/weigl/work/go/src/github.com/wadoon/scoreboard/kuromasu/riddles", "read";
+
+      permission "java.io.FilePermission"
+        "/home/weigl/work/go/src/github.com/wadoon/scoreboard/kuromasu/riddles/*", "read";
+};

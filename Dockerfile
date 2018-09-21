@@ -1,6 +1,8 @@
 FROM alpine
 
 ADD config.json .
-ADD leaderboard .
+ADD scoreboard  .
+ADD kuromasu    .
+ADD test        .
 
 CMD ./scoreboard
